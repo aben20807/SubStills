@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Extension Icons</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 2rem;
+            max-width: 800px;
+            margin: 0 auto;
+            background: #f0f2f5;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .preview-section {
+            display: flex;
+            gap: 2rem;
+            margin: 2rem 0;
+            align-items: flex-end;
+        }
+        .icon-preview {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            background: transparent;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        .instructions {
+            background: #e8f0fe;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 2rem;
+            color: #1a73e8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Generate Icons</h1>
+        <div class="instructions">
+            <p>Click the button below to generate and download all icon sizes (16x16, 48x48, 128x128).</p>
+            <p>After downloading, move these files to your <code>icons/</code> folder.</p>
+        </div>
+
+        <div class="preview-section">
+            <div class="icon-preview">
+                <canvas id="canvas128" width="128" height="128"></canvas>
+                <span>128x128</span>
+            </div>
+            <div class="icon-preview">
+                <canvas id="canvas48" width="48" height="48"></canvas>
+                <span>48x48</span>
+            </div>
+            <div class="icon-preview">
+                <canvas id="canvas16" width="16" height="16"></canvas>
+                <span>16x16</span>
+            </div>
+        </div>
+
+        <button onclick="downloadAll()">Download All Icons</button>
+    </div>
+
+    <script>
+        function drawIcon(ctx, size) {
+            const center = size / 2;
+            const scale = size / 128; // Base design on 128px
+
+            // Clear
+            ctx.clearRect(0, 0, size, size);
+
+            // Background circle
+            ctx.beginPath();
+            ctx.arc(center, center, 60 * scale, 0, Math.PI * 2);
+            ctx.fillStyle = '#E50914'; // Netflix Red-ish
+            ctx.fill();
+
+            // Camera body
+            ctx.fillStyle = 'white';
+            const w = 70 * scale;
+            const h = 50 * scale;
+            const x = center - w/2;
+            const y = center - h/2;
+            
+            // Main box
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, 8 * scale);
+            ctx.fill();
+
+            // Lens
+            ctx.beginPath();
+            ctx.arc(center, center, 18 * scale, 0, Math.PI * 2);
+            ctx.fillStyle = '#E50914';
+            ctx.fill();
+            
+            // Lens reflection
+            ctx.beginPath();
+            ctx.arc(center, center, 12 * scale, 0, Math.PI * 2);
+            ctx.fillStyle = '#333';
+            ctx.fill();
+
+            // Flash/Button
+            ctx.beginPath();
+            ctx.rect(x + w - (20 * scale), y - (6 * scale), 12 * scale, 6 * scale);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+        }
+
+        function init() {
+            ['128', '48', '16'].forEach(size => {
+                const canvas = document.getElementById('canvas' + size);
+                const ctx = canvas.getContext('2d');
+                drawIcon(ctx, parseInt(size));
+            });
+        }
+
+        function downloadCanvas(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function downloadAll() {
+            downloadCanvas('canvas16', 'icon16.png');
+            setTimeout(() => downloadCanvas('canvas48', 'icon48.png'), 100);
+            setTimeout(() => downloadCanvas('canvas128', 'icon128.png'), 200);
+        }
+
+        // Polyfill for roundRect if needed
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+                if (w < 2 * r) r = w / 2;
+                if (h < 2 * r) r = h / 2;
+                this.beginPath();
+                this.moveTo(x + r, y);
+                this.arcTo(x + w, y, x + w, y + h, r);
+                this.arcTo(x + w, y + h, x, y + h, r);
+                this.arcTo(x, y + h, x, y, r);
+                this.arcTo(x, y, x + w, y, r);
+                this.closePath();
+                return this;
+            };
+        }
+
+        init();
+    </script>
+</body>
+</html>

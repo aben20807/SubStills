@@ -1,0 +1,61 @@
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editor/IDE Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Node modules (if using any build tools)
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Build files
+dist/
+build/
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+tmp/
+
+# Development/Test files
+test.html
+test*.html
+*.test.js
+*.spec.js
+
+# Chrome Extension Development
+*.pem
+*.crx
+*.zip
+
+# Environment variables
+.env
+.env.local
+
+# User data (don't commit personal API keys or settings)
+# Note: These files are not in the repo by default, but listed for safety
+user-data/
+test-data/
+
+# Backups
+backup/
+*.backup

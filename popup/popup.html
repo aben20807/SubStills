@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SubStills</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>📸 SubStills</h1>
+    <p class="subtitle">Capture video with subtitles</p>
+    
+    <div class="controls">
+      <button id="captureBtn" class="btn primary">
+        <span class="icon">📷</span>
+        Capture Screenshot
+      </button>
+      
+      <div class="options">
+        <label class="checkbox-label">
+          <input type="checkbox" id="includeSubtitles" checked>
+          <span>Include Subtitles</span>
+        </label>
+        
+        <label class="checkbox-label">
+          <input type="checkbox" id="autoDownload" checked>
+          <span>Auto Download</span>
+        </label>
+      </div>
+      
+      <div class="format-select">
+        <label for="format">Format:</label>
+        <select id="format">
+          <option value="png">PNG</option>
+          <option value="jpeg">JPEG</option>
+          <option value="webp">WebP</option>
+        </select>
+      </div>
+    </div>
+    
+    <div id="status" class="status"></div>
+    
+    <div id="preview" class="preview hidden">
+      <img id="previewImage" alt="Screenshot preview">
+      <div class="preview-actions">
+        <button id="downloadBtn" class="btn secondary">Download</button>
+        <button id="copyBtn" class="btn secondary">Copy to Clipboard</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
