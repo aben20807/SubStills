@@ -101,7 +101,7 @@ Apache 2.0 License
 ## Acknowledgments
 
 - Inspired by [Video Screenshot](https://chromewebstore.google.com/detail/video-screenshot/ppkojackhibeogijphhfnamhemklmial), which requires a monthly fee of \$2 to capture subtitles.
-- This extension was developed with substantial assistance from GitHub Copilot (Claude Sonnet 4.5, Gemini 3 Pro) and refined through human feedback.
+- This extension was developed with substantial assistance from GitHub Copilot (Claude Opus 4.5, Gemini 3 Pro) and refined through human feedback.
 
 ## Disclaimer
 
