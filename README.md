@@ -2,6 +2,8 @@
 
 SubStills combines "Subtitles" and "Stills". It is a Chrome extension that captures video screenshots with subtitles.
 
+[![BuyMeACoffee](https://raw.githubusercontent.com/pachadotdev/buymeacoffee-badges/main/bmc-yellow.svg)](https://buymeacoffee.com/aben20807)
+
 ## Features
 
 - 📷 **Capture video screenshots** - Take screenshots from any video playing in your browser
