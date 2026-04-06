@@ -4,14 +4,24 @@
 (function() {
   'use strict';
 
+  const DEFAULT_SEEK_SETTINGS = {
+    seekStepValue: 1,
+    seekStepUnit: 'frames'
+  };
+
+  const IS_NETFLIX = /(^|\.)netflix\.com$/i.test(window.location.hostname);
+
   // Store hidden elements to restore later
   let hiddenElements = [];
   
   // Track if screenshot button has been injected
   let buttonInjected = false;
 
-  // Initialize - inject button when page loads
+  // Restore the original screenshot injection path everywhere.
+  // Seek functionality is executed via the background worker so we do not need
+  // to mutate Netflix's control bar with custom seek buttons.
   initScreenshotButton();
+  initKeyboardShortcuts();
 
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -45,7 +55,52 @@
       sendResponse({ success: true });
       return true;
     }
+
+    if (request.action === 'seekVideo') {
+      seekVideoByDirection(request.direction, request.settings)
+        .then(result => sendResponse(result))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true;
+    }
   });
+
+  function initKeyboardShortcuts() {
+    document.addEventListener('keydown', async (event) => {
+      if (event.defaultPrevented || event.repeat) {
+        return;
+      }
+
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      if (event.code === 'Comma' || event.key === ',') {
+        event.preventDefault();
+        event.stopPropagation();
+        await seekVideoByDirection('previous');
+      }
+
+      if (event.code === 'Period' || event.key === '.') {
+        event.preventDefault();
+        event.stopPropagation();
+        await seekVideoByDirection('next');
+      }
+    }, true);
+  }
+
+  function isEditableTarget(target) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+
+    return target.isContentEditable ||
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+      !!target.closest('[contenteditable="true"]');
+  }
 
   // Initialize screenshot button injection
   function initScreenshotButton() {
@@ -62,12 +117,12 @@
         
         // If we found a container, check if OUR button is inside it
         if (container) {
-          if (!container.querySelector('[data-uia="control-screenshot"]')) {
+          if (!container.querySelector('[data-substills-control="screenshot"]')) {
             injectScreenshotButton();
           }
         } else {
           // Fallback: just check if it exists anywhere
-          if (!document.querySelector('[data-uia="control-screenshot"]')) {
+          if (!document.querySelector('[data-substills-control="screenshot"]')) {
             injectScreenshotButton();
           }
         }
@@ -120,8 +175,15 @@
     if (!video) return;
 
     // Check if button already exists
-    if (document.querySelector('.video-screenshot-btn')) {
+    if (document.querySelector('[data-substills-control="screenshot"]')) {
       buttonInjected = true;
+      return;
+    }
+
+    if (IS_NETFLIX) {
+      if (injectIntoNetflixControls()) {
+        buttonInjected = true;
+      }
       return;
     }
 
@@ -159,40 +221,17 @@
     const container = wrapper.parentElement;
     if (!container) return false;
 
-    // Clone the wrapper completely (this includes the button inside)
-    const newWrapper = wrapper.cloneNode(true);
-    const btn = newWrapper.querySelector('button');
-    
-    if (!btn) return false;
-
-    // Change identity of the button
-    btn.setAttribute('data-uia', 'control-screenshot');
-    btn.className = referenceBtn.className + ' video-screenshot-btn';
-    btn.title = 'Screenshot';
-    btn.style.order = ''; // Reset order if it was set
-    
-    // Replace the SVG with camera icon
-    const existingSvg = btn.querySelector('svg');
+    const existingSvg = referenceBtn.querySelector('svg');
     const svgClass = existingSvg ? existingSvg.getAttribute('class') : '';
-    
-    // Use a camera icon that matches Netflix style
-    btn.innerHTML = `
-      <div class="control-medium default-ltr-iqcdef-cache-iyulz3" role="presentation">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="${svgClass}" aria-hidden="true">
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M4 6C2.89543 6 2 6.89543 2 8V18C2 19.1046 2.89543 20 4 20H20C21.1046 20 22 19.1046 22 18V8C22 6.89543 21.1046 6 20 6H17.4142L15.7071 4.29289C15.5196 4.10536 15.2652 4 15 4H9C8.73478 4 8.48043 4.10536 8.29289 4.29289L6.58579 6H4ZM12 17C14.4853 17 16.5 14.9853 16.5 12.5C16.5 10.0147 14.4853 8 12 8C9.51472 8 7.5 10.0147 7.5 12.5C7.5 14.9853 9.51472 17 12 17Z" fill="currentColor"></path>
-        </svg>
-      </div>
-    `;
 
-    // Remove any existing event listeners by not cloning them (cloneNode doesn't copy listeners)
-    btn.onclick = null;
-    
-    // Add our click handler
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await takeScreenshotFromButton();
-    });
+    const controls = [
+      {
+        action: 'screenshot',
+        title: 'Screenshot',
+        icon: getScreenshotIcon(svgClass),
+        onClick: () => takeScreenshotFromButton()
+      }
+    ];
 
     // Insert logic: We want to insert the wrapper into the container.
     // We also need to handle the spacer div if it exists.
@@ -205,9 +244,34 @@
       spacer = wrapper.previousElementSibling.cloneNode(true);
     }
 
-    // Insert before the reference wrapper
-    // We want the order: ... -> Existing Spacer -> Screenshot -> New Spacer -> Reference Button
-    container.insertBefore(newWrapper, wrapper);
+    for (const control of controls) {
+      const newWrapper = wrapper.cloneNode(true);
+      const btn = newWrapper.querySelector('button');
+
+      if (!btn) {
+        continue;
+      }
+
+      btn.setAttribute('data-uia', `control-substills-${control.action}`);
+      btn.setAttribute('data-substills-control', control.action);
+      btn.className = `${referenceBtn.className} video-screenshot-btn`;
+      btn.title = control.title;
+      btn.style.order = '';
+      btn.innerHTML = `
+        <div class="control-medium default-ltr-iqcdef-cache-iyulz3" role="presentation">
+          ${control.icon}
+        </div>
+      `;
+      btn.onclick = null;
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await control.onClick();
+      });
+
+      container.insertBefore(newWrapper, wrapper);
+    }
+
     if (spacer) {
       container.insertBefore(spacer, wrapper);
     }
@@ -220,34 +284,54 @@
     const rightControls = document.querySelector('.ytp-right-controls');
     if (!rightControls) return false;
 
-    const btn = document.createElement('button');
-    btn.className = 'video-screenshot-btn ytp-button';
-    btn.title = 'Screenshot';
-    btn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 0 24 24" width="100%" fill="white">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" fill="none" stroke="white" stroke-width="1.5"/>
-        <circle cx="12" cy="13" r="4" fill="none" stroke="white" stroke-width="1.5"/>
-      </svg>
-    `;
+    const controls = [
+      {
+        action: 'previous',
+        title: 'Previous Step',
+        icon: getPreviousIcon(),
+        onClick: () => seekVideoByDirection('previous')
+      },
+      {
+        action: 'screenshot',
+        title: 'Screenshot',
+        icon: getScreenshotIcon(),
+        onClick: () => takeScreenshotFromButton()
+      },
+      {
+        action: 'next',
+        title: 'Next Step',
+        icon: getNextIcon(),
+        onClick: () => seekVideoByDirection('next')
+      }
+    ];
 
-    Object.assign(btn.style, {
-      background: 'transparent',
-      border: 'none',
-      cursor: 'pointer',
-      width: '48px',
-      height: '48px',
-      padding: '12px',
-      opacity: '0.9'
-    });
+    for (let index = controls.length - 1; index >= 0; index -= 1) {
+      const control = controls[index];
+      const btn = document.createElement('button');
+      btn.className = 'video-screenshot-btn ytp-button';
+      btn.title = control.title;
+      btn.dataset.substillsControl = control.action;
+      btn.innerHTML = control.icon;
 
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await takeScreenshotFromButton();
-    });
+      Object.assign(btn.style, {
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        width: '48px',
+        height: '48px',
+        padding: '12px',
+        opacity: '0.9'
+      });
 
-    // Insert at the beginning of right controls
-    rightControls.insertBefore(btn, rightControls.firstChild);
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await control.onClick();
+      });
+
+      rightControls.insertBefore(btn, rightControls.firstChild);
+    }
+
     return true;
   }
 
@@ -255,52 +339,97 @@
     const videoContainer = findVideoContainer(video);
     if (!videoContainer) return;
 
-    const btn = document.createElement('button');
-    btn.className = 'video-screenshot-btn video-screenshot-btn-overlay';
-    btn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-        <circle cx="12" cy="13" r="4"></circle>
-      </svg>
-    `;
-    btn.title = 'Take Screenshot';
+    const controls = document.createElement('div');
+    controls.className = 'substills-overlay-controls';
 
-    Object.assign(btn.style, {
-      position: 'absolute',
-      top: '10px',
-      right: '10px',
-      zIndex: '9999',
-      background: 'rgba(0, 0, 0, 0.6)',
-      border: 'none',
-      borderRadius: '4px',
-      padding: '8px',
-      cursor: 'pointer',
-      color: 'white',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      opacity: '0',
-      transition: 'opacity 0.2s ease',
-      pointerEvents: 'auto'
-    });
+    const overlayButtons = [
+      {
+        action: 'previous',
+        title: 'Previous Step',
+        icon: getPreviousIcon(),
+        onClick: () => seekVideoByDirection('previous')
+      },
+      {
+        action: 'screenshot',
+        title: 'Take Screenshot',
+        icon: getScreenshotIcon(),
+        onClick: () => takeScreenshotFromButton()
+      },
+      {
+        action: 'next',
+        title: 'Next Step',
+        icon: getNextIcon(),
+        onClick: () => seekVideoByDirection('next')
+      }
+    ];
 
-    videoContainer.addEventListener('mouseenter', () => btn.style.opacity = '1');
-    videoContainer.addEventListener('mouseleave', () => btn.style.opacity = '0');
-    btn.addEventListener('mouseenter', () => btn.style.background = 'rgba(102, 126, 234, 0.8)');
-    btn.addEventListener('mouseleave', () => btn.style.background = 'rgba(0, 0, 0, 0.6)');
+    for (const control of overlayButtons) {
+      const btn = document.createElement('button');
+      btn.className = 'video-screenshot-btn video-screenshot-btn-overlay';
+      btn.dataset.substillsControl = control.action;
+      btn.innerHTML = control.icon;
+      btn.title = control.title;
 
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await takeScreenshotFromButton();
-    });
+      Object.assign(btn.style, {
+        background: 'rgba(0, 0, 0, 0.6)',
+        border: 'none',
+        borderRadius: '4px',
+        padding: '8px',
+        cursor: 'pointer',
+        color: 'white',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'background 0.2s ease',
+        pointerEvents: 'auto'
+      });
+
+      btn.addEventListener('mouseenter', () => btn.style.background = 'rgba(102, 126, 234, 0.8)');
+      btn.addEventListener('mouseleave', () => btn.style.background = 'rgba(0, 0, 0, 0.6)');
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await control.onClick();
+      });
+
+      controls.appendChild(btn);
+    }
+
+    videoContainer.addEventListener('mouseenter', () => controls.style.opacity = '1');
+    videoContainer.addEventListener('mouseleave', () => controls.style.opacity = '0');
 
     const containerStyle = window.getComputedStyle(videoContainer);
     if (containerStyle.position === 'static') {
       videoContainer.style.position = 'relative';
     }
 
-    videoContainer.appendChild(btn);
+    videoContainer.appendChild(controls);
+  }
+
+  function getPreviousIcon(svgClass = '') {
+    return `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="${svgClass}" aria-hidden="true">
+        <path d="M8 6V18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        <path d="M17 7L11 12L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    `;
+  }
+
+  function getNextIcon(svgClass = '') {
+    return `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="${svgClass}" aria-hidden="true">
+        <path d="M16 6V18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        <path d="M7 7L13 12L7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+      </svg>
+    `;
+  }
+
+  function getScreenshotIcon(svgClass = '') {
+    return `
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="${svgClass}" aria-hidden="true">
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M4 6C2.89543 6 2 6.89543 2 8V18C2 19.1046 2.89543 20 4 20H20C21.1046 20 22 19.1046 22 18V8C22 6.89543 21.1046 6 20 6H17.4142L15.7071 4.29289C15.5196 4.10536 15.2652 4 15 4H9C8.73478 4 8.48043 4.10536 8.29289 4.29289L6.58579 6H4ZM12 17C14.4853 17 16.5 14.9853 16.5 12.5C16.5 10.0147 14.4853 8 12 8C9.51472 8 7.5 10.0147 7.5 12.5C7.5 14.9853 9.51472 17 12 17Z" fill="currentColor"></path>
+      </svg>
+    `;
   }
 
   function findVideoContainer(video) {
@@ -319,7 +448,7 @@
     // Get settings from storage
     const settings = await chrome.storage.local.get(['includeSubtitles', 'format']);
     const includeSubtitles = settings.includeSubtitles !== false; // default true
-    const format = settings.format || 'png';
+    const format = settings.format || 'jpeg'; // default jpeg
 
     // Hide controls but keep subtitles based on setting
     hidePlayerControls(!includeSubtitles);
@@ -418,6 +547,20 @@
       title: title,
       timestamp: timestamp
     };
+  }
+
+  async function seekVideoByDirection(direction, settingsOverride) {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'performSeek',
+        direction,
+        settings: settingsOverride
+      });
+
+      return response || { success: false, error: 'Seek execution returned no response' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 
   function getVideoTitle() {

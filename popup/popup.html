@@ -16,6 +16,29 @@
         <span class="icon">📷</span>
         Capture Screenshot
       </button>
+
+      <div class="seek-panel">
+        <div class="seek-buttons">
+          <button id="seekPrevBtn" class="btn secondary" type="button">
+            <span class="icon">⏮</span>
+            Previous
+          </button>
+          <button id="seekNextBtn" class="btn secondary" type="button">
+            <span class="icon">⏭</span>
+            Next
+          </button>
+        </div>
+        <div class="seek-settings">
+          <label for="seekStepValue">Jump Size:</label>
+          <input id="seekStepValue" type="number" min="1" step="1" value="1">
+          <select id="seekStepUnit">
+            <option value="frames">Frames</option>
+            <option value="seconds">Seconds</option>
+          </select>
+        </div>
+        <p class="hint">Seek Method: Netflix player API</p>
+        <p class="hint">Keyboard: <strong>,</strong> previous, <strong>.</strong> next</p>
+      </div>
       
       <div class="options">
         <label class="checkbox-label">

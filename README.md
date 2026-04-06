@@ -5,6 +5,7 @@ SubStills combines "Subtitles" and "Stills". It is a Chrome extension that captu
 ## Features
 
 - 📷 **Capture video screenshots** - Take screenshots from any video playing in your browser
+- ⏮️ **Fine-grained stepping** - Move to the previous or next frame-sized step from popup buttons or keyboard shortcuts
 - 📝 **Include subtitles** - Automatically captures visible subtitles/captions with the screenshot
 - 🎨 **Multiple formats** - Export as PNG, JPEG, or WebP
 - 📋 **Copy to clipboard** - Quickly copy screenshots to clipboard
@@ -19,7 +20,7 @@ SubStills combines "Subtitles" and "Stills". It is a Chrome extension that captu
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable **Developer mode** (toggle in top right corner)
 4. Click **Load unpacked**
-5. Select the `video-shot` folder
+5. Select the `SubStills` folder
 
 ## Usage
 
@@ -27,18 +28,23 @@ SubStills combines "Subtitles" and "Stills". It is a Chrome extension that captu
 2. Start playing the video
 3. Enable subtitles/captions if you want them included
 4. Click the extension icon in your toolbar
-5. Click **Capture Screenshot**
-6. The screenshot will be saved automatically or shown in preview
+5. Use **Previous** / **Next** to step the video by your configured jump size
+6. Click **Capture Screenshot**
+7. Use keyboard shortcuts `,` for previous step and `.` for next step while focused on the page
+8. The screenshot will be saved automatically or shown in preview
 
 ### Options
 
 - **Include Subtitles** - Toggle to include visible subtitles in the screenshot
 - **Auto Download** - Automatically download screenshots when captured
 - **Format** - Choose between PNG, JPEG, or WebP
+- **Jump Size** - Configure how far Previous/Next moves the video
+- **Jump Unit** - Choose whether the jump size is measured in frames or seconds
+- **Seek Method** - Uses the Netflix player API only
 
 ## Project Structure
 
-```
+```text
 video-shot/
 ├── manifest.json          # Extension configuration
 ├── popup/
@@ -78,13 +84,12 @@ No build step required - this is a vanilla JavaScript extension.
 
 1. **Video Detection**: The content script finds the largest playing video on the page
 2. **Frame Capture**: Uses HTML5 Canvas API to draw the current video frame
-3. **Subtitle Capture**: 
+3. **Subtitle Capture**:
    - Captures native text tracks (WebVTT)
    - Captures DOM-based subtitles (YouTube, Netflix custom players)
 4. **Export**: Converts canvas to image data URL for download/clipboard
 
 ## Troubleshooting
-
 
 ### Subtitles not captured
 
@@ -101,7 +106,7 @@ Apache 2.0 License
 ## Acknowledgments
 
 - Inspired by [Video Screenshot](https://chromewebstore.google.com/detail/video-screenshot/ppkojackhibeogijphhfnamhemklmial), which requires a monthly fee of \$2 to capture subtitles.
-- This extension was developed with substantial assistance from GitHub Copilot (Claude Opus 4.5, Gemini 3 Pro) and refined through human feedback.
+- This extension was developed with substantial assistance from GitHub Copilot (Claude Opus 4.5, Gemini 3 Pro, GPT-5.4, GPT-5 mini) and refined through human feedback.
 
 ## Disclaimer
 
@@ -110,5 +115,3 @@ This extension respects Digital Rights Management (DRM) protected content. Scree
 This tool is essentially a convenient alternative to using browser developer tools (F12) to capture video frames. It does not bypass any DRM protections or circumvent technical measures.
 
 If you believe this tool is inappropriate or violates any terms of service, please contact us and we will address your concerns promptly.
-
-

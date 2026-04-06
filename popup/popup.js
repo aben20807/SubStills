@@ -1,5 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
   const captureBtn = document.getElementById('captureBtn');
+  const seekPrevBtn = document.getElementById('seekPrevBtn');
+  const seekNextBtn = document.getElementById('seekNextBtn');
+  const seekStepValueInput = document.getElementById('seekStepValue');
+  const seekStepUnitSelect = document.getElementById('seekStepUnit');
   const includeSubtitles = document.getElementById('includeSubtitles');
   const autoDownload = document.getElementById('autoDownload');
   const formatSelect = document.getElementById('format');
@@ -8,20 +12,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const previewImage = document.getElementById('previewImage');
   const downloadBtn = document.getElementById('downloadBtn');
   const copyBtn = document.getElementById('copyBtn');
+  const DEFAULT_SEEK_SETTINGS = {
+    seekStepValue: 1,
+    seekStepUnit: 'frames',
+    seekMethod: 'netflix-player-api'
+  };
 
   let lastScreenshot = null;
 
   // Load saved settings
-  chrome.storage.local.get(['includeSubtitles', 'autoDownload', 'format'], (result) => {
+  chrome.storage.local.get([
+    'includeSubtitles',
+    'autoDownload',
+    'format',
+    'seekStepValue',
+    'seekStepUnit'
+  ], (result) => {
     if (result.includeSubtitles !== undefined) {
       includeSubtitles.checked = result.includeSubtitles;
     }
     if (result.autoDownload !== undefined) {
       autoDownload.checked = result.autoDownload;
     }
-    if (result.format) {
-      formatSelect.value = result.format;
-    }
+    // Default format to jpeg if not set
+    formatSelect.value = result.format || 'jpeg';
+
+    const seekSettings = normalizeSeekSettings(result);
+    seekStepValueInput.value = seekSettings.seekStepValue;
+    seekStepUnitSelect.value = seekSettings.seekStepUnit;
   });
 
   // Save settings on change
@@ -37,6 +55,9 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ format: formatSelect.value });
   });
 
+  seekStepValueInput.addEventListener('change', saveSeekSettings);
+  seekStepUnitSelect.addEventListener('change', saveSeekSettings);
+
   function showStatus(message, type) {
     statusDiv.textContent = message;
     statusDiv.className = `status ${type}`;
@@ -45,6 +66,87 @@ document.addEventListener('DOMContentLoaded', () => {
   function hideStatus() {
     statusDiv.className = 'status';
   }
+
+  function normalizeSeekSettings(rawSettings = {}) {
+    const unit = rawSettings.seekStepUnit === 'seconds' ? 'seconds' : DEFAULT_SEEK_SETTINGS.seekStepUnit;
+    const numericValue = Number(rawSettings.seekStepValue);
+
+    let seekStepValue = Number.isFinite(numericValue) && numericValue > 0
+      ? numericValue
+      : DEFAULT_SEEK_SETTINGS.seekStepValue;
+
+    if (unit === 'frames') {
+      seekStepValue = Math.max(1, Math.round(seekStepValue));
+    } else {
+      seekStepValue = Math.max(0.01, Number(seekStepValue.toFixed(3)));
+    }
+
+    return {
+      seekStepValue,
+      seekStepUnit: unit,
+      seekMethod: DEFAULT_SEEK_SETTINGS.seekMethod
+    };
+  }
+
+  function saveSeekSettings() {
+    const seekSettings = normalizeSeekSettings({
+      seekStepValue: seekStepValueInput.value,
+      seekStepUnit: seekStepUnitSelect.value
+    });
+
+    seekStepValueInput.value = seekSettings.seekStepValue;
+    seekStepUnitSelect.value = seekSettings.seekStepUnit;
+    chrome.storage.local.set(seekSettings);
+  }
+
+  function formatSeekLabel(value, unit) {
+    const suffix = value === 1 ? unit.slice(0, -1) : unit;
+    return `${value} ${suffix}`;
+  }
+
+  async function sendSeekCommand(direction) {
+    seekPrevBtn.disabled = true;
+    seekNextBtn.disabled = true;
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab) {
+        showStatus('No active tab found', 'error');
+        return;
+      }
+
+      const seekSettings = normalizeSeekSettings({
+        seekStepValue: seekStepValueInput.value,
+        seekStepUnit: seekStepUnitSelect.value
+      });
+
+      const response = await chrome.runtime.sendMessage({
+        action: 'performSeek',
+        tabId: tab.id,
+        direction,
+        settings: seekSettings
+      });
+
+      if (response?.success) {
+        showStatus(
+          `${direction === 'previous' ? 'Moved back' : 'Moved forward'} ${formatSeekLabel(response.seekStepValue, response.seekStepUnit)} via Netflix player API`,
+          'success'
+        );
+      } else {
+        showStatus(response?.error || 'No video found on this page', 'error');
+      }
+    } catch (error) {
+      console.error('Seek error:', error);
+      showStatus('Failed to seek video on this page', 'error');
+    } finally {
+      seekPrevBtn.disabled = false;
+      seekNextBtn.disabled = false;
+    }
+  }
+
+  seekPrevBtn.addEventListener('click', () => sendSeekCommand('previous'));
+  seekNextBtn.addEventListener('click', () => sendSeekCommand('next'));
 
   captureBtn.addEventListener('click', async () => {
     captureBtn.disabled = true;
