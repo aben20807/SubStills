@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const DEFAULT_SEEK_SETTINGS = {
     seekStepValue: 1,
     seekStepUnit: 'frames',
-    seekMethod: 'netflix-player-api'
+    seekMethod: 'auto'
   };
 
   let lastScreenshot = null;
@@ -129,8 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (response?.success) {
+        const methodLabel = response.methodLabel || 'player API';
         showStatus(
-          `${direction === 'previous' ? 'Moved back' : 'Moved forward'} ${formatSeekLabel(response.seekStepValue, response.seekStepUnit)} via Netflix player API`,
+          `${direction === 'previous' ? 'Moved back' : 'Moved forward'} ${formatSeekLabel(response.seekStepValue, response.seekStepUnit)} via ${methodLabel}`,
           'success'
         );
       } else {

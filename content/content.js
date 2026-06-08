@@ -10,6 +10,7 @@
   };
 
   const IS_NETFLIX = /(^|\.)netflix\.com$/i.test(window.location.hostname);
+  const IS_YOUTUBE = /(^|\.)youtube\.com$/i.test(window.location.hostname);
 
   // Store hidden elements to restore later
   let hiddenElements = [];
@@ -74,6 +75,10 @@
         return;
       }
 
+      if (event.shiftKey) {
+        return;
+      }
+
       if (isEditableTarget(event.target)) {
         return;
       }
@@ -105,27 +110,18 @@
   // Initialize screenshot button injection
   function initScreenshotButton() {
     const inject = () => {
-      // Robust check: Ensure button exists in the CURRENT control bar
-      const referenceBtn = document.querySelector('[data-uia="control-audio-subtitle"]') || 
-                           document.querySelector('[data-uia="control-speed"]') ||
-                           document.querySelector('[data-uia="control-fullscreen-enter"]');
-      
-      if (referenceBtn) {
-        // Find the container of the reference button
-        const container = referenceBtn.closest('.default-ltr-iqcdef-cache-gpipej') || 
-                          (referenceBtn.parentElement && referenceBtn.parentElement.parentElement);
-        
-        // If we found a container, check if OUR button is inside it
-        if (container) {
-          if (!container.querySelector('[data-substills-control="screenshot"]')) {
-            injectScreenshotButton();
-          }
-        } else {
-          // Fallback: just check if it exists anywhere
-          if (!document.querySelector('[data-substills-control="screenshot"]')) {
-            injectScreenshotButton();
-          }
-        }
+      if (document.querySelector('[data-substills-control="screenshot"]')) {
+        return;
+      }
+
+      const netflixReferenceBtn = document.querySelector('[data-uia="control-audio-subtitle"]') ||
+                                  document.querySelector('[data-uia="control-speed"]') ||
+                                  document.querySelector('[data-uia="control-fullscreen-enter"]');
+      const youtubeControls = document.querySelector('.ytp-right-controls');
+      const hasVideo = !!findBestVideo();
+
+      if ((IS_NETFLIX && netflixReferenceBtn) || (IS_YOUTUBE && youtubeControls) || hasVideo) {
+        injectScreenshotButton();
       }
     };
 
@@ -685,12 +681,14 @@
           const originalDisplay = el.style.display;
           const originalVisibility = el.style.visibility;
           const originalOpacity = el.style.opacity;
+          const originalZIndex = el.style.zIndex;
           
           hiddenElements.push({
             element: el,
             display: originalDisplay,
             visibility: originalVisibility,
-            opacity: originalOpacity
+            opacity: originalOpacity,
+            zIndex: originalZIndex
           });
           
           // Hide the element
@@ -713,6 +711,7 @@
       item.element.style.display = item.display;
       item.element.style.visibility = item.visibility;
       item.element.style.opacity = item.opacity;
+      item.element.style.zIndex = item.zIndex;
     }
     hiddenElements = [];
   }
@@ -915,44 +914,53 @@
   }
 
   async function captureDOMSubtitles(ctx, video, canvasWidth, canvasHeight) {
-    // Find subtitle containers based on common patterns
-    const subtitleSelectors = [
-      // YouTube
-      '.ytp-caption-segment',
-      '.caption-window',
-      '.captions-text',
-      // Netflix
-      '.player-timedtext-text-container',
-      '.player-timedtext span',
-      // Vimeo
+    // Prefer precise site selectors so random overlays are not treated as subtitles.
+    const platformSelectors = IS_YOUTUBE
+      ? [
+          '.ytp-caption-window-container .ytp-caption-segment',
+          '.ytp-caption-window-container .caption-window',
+          '.ytp-caption-segment'
+        ]
+      : IS_NETFLIX
+        ? [
+            '.player-timedtext-text-container',
+            '.player-timedtext span'
+          ]
+        : [];
+
+    const fallbackSelectors = [
       '.vp-captions',
-      // Generic HTML5 video subtitles
       '.vjs-text-track-display',
-      '[class*="subtitle"]',
-      '[class*="caption"]',
-      '[class*="captions"]',
-      // Prime Video
       '.atvwebplayersdk-captions-text',
-      // Disney+
-      '.btm-media-overlays-container',
-      // HBO Max
-      '[class*="Subtitle"]'
+      '.btm-media-overlays-container'
     ];
 
+    const subtitleSelectors = platformSelectors.length > 0
+      ? platformSelectors
+      : fallbackSelectors;
+
     const videoRect = video.getBoundingClientRect();
+    const seenElements = new Set();
     
     for (const selector of subtitleSelectors) {
       const elements = document.querySelectorAll(selector);
       
       for (const element of elements) {
+        if (seenElements.has(element)) continue;
+        seenElements.add(element);
+
         if (!isElementVisible(element)) continue;
+
+        const elementRect = element.getBoundingClientRect();
+        if (!isLikelySubtitleElement(element, elementRect, videoRect)) continue;
         
         const text = element.innerText || element.textContent;
         if (!text || !text.trim()) continue;
+        const normalizedText = text.replace(/\s+/g, ' ').trim();
+        if (!normalizedText || normalizedText.length > 240) continue;
 
         // Get computed styles for accurate rendering
         const computedStyle = window.getComputedStyle(element);
-        const elementRect = element.getBoundingClientRect();
         
         // Calculate position relative to video
         const relativeX = (elementRect.left - videoRect.left) / videoRect.width;
@@ -960,7 +968,7 @@
         
         // Only render if subtitle is within video bounds
         if (relativeX >= -0.1 && relativeX <= 1.1 && relativeY >= -0.1 && relativeY <= 1.1) {
-          drawStyledSubtitle(ctx, text.trim(), {
+          drawStyledSubtitle(ctx, normalizedText, {
             x: relativeX * canvasWidth,
             y: relativeY * canvasHeight,
             width: (elementRect.width / videoRect.width) * canvasWidth,
@@ -985,6 +993,45 @@
     
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
+  }
+
+  function isLikelySubtitleElement(element, elementRect, videoRect) {
+    if (!videoRect || videoRect.width <= 0 || videoRect.height <= 0) {
+      return false;
+    }
+
+    const relativeLeft = (elementRect.left - videoRect.left) / videoRect.width;
+    const relativeTop = (elementRect.top - videoRect.top) / videoRect.height;
+    const relativeRight = (elementRect.right - videoRect.left) / videoRect.width;
+    const relativeBottom = (elementRect.bottom - videoRect.top) / videoRect.height;
+    const widthRatio = elementRect.width / videoRect.width;
+    const heightRatio = elementRect.height / videoRect.height;
+    const centerX = (relativeLeft + relativeRight) / 2;
+
+    const overlapsVideo = relativeRight >= -0.05 && relativeLeft <= 1.05 && relativeBottom >= -0.05 && relativeTop <= 1.05;
+    if (!overlapsVideo) {
+      return false;
+    }
+
+    if (widthRatio <= 0 || widthRatio > 0.95 || heightRatio <= 0 || heightRatio > 0.35) {
+      return false;
+    }
+
+    const className = (element.className || '').toString();
+
+    if (IS_YOUTUBE) {
+      return element.closest('.ytp-caption-window-container') !== null ||
+        className.includes('ytp-caption') ||
+        className.includes('caption-window');
+    }
+
+    if (IS_NETFLIX) {
+      return className.toLowerCase().includes('timedtext');
+    }
+
+    const nearBottom = relativeTop >= 0.35 && relativeBottom <= 0.99;
+    const nearCenter = centerX >= 0.12 && centerX <= 0.88;
+    return nearBottom && nearCenter;
   }
 
   function drawSubtitleText(ctx, text, canvasWidth, canvasHeight) {

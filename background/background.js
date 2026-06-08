@@ -6,7 +6,7 @@ const DEFAULT_SETTINGS = {
   format: 'jpeg',
   seekStepValue: 1,
   seekStepUnit: 'frames',
-  seekMethod: 'netflix-player-api'
+  seekMethod: 'auto'
 };
 
 function normalizeSeekSettings(rawSettings = {}) {
@@ -26,7 +26,7 @@ function normalizeSeekSettings(rawSettings = {}) {
   return {
     seekStepValue,
     seekStepUnit: unit,
-    seekMethod: DEFAULT_SETTINGS.seekMethod
+    seekMethod: 'auto'
   };
 }
 
@@ -151,6 +151,37 @@ async function executeSeekInTab(tabId, direction, settings) {
         }
       }
 
+      function getYouTubePlayer() {
+        const playerById = document.getElementById('movie_player');
+        if (playerById && typeof playerById.getCurrentTime === 'function' && typeof playerById.seekTo === 'function') {
+          return playerById;
+        }
+
+        const playerByClass = document.querySelector('.html5-video-player');
+        if (playerByClass && typeof playerByClass.getCurrentTime === 'function' && typeof playerByClass.seekTo === 'function') {
+          return playerByClass;
+        }
+
+        return null;
+      }
+
+      function getPrimaryVideo() {
+        const candidates = Array.from(document.querySelectorAll('video'))
+          .filter(video => video.videoWidth > 0 && video.videoHeight > 0);
+
+        if (candidates.length === 0) {
+          return null;
+        }
+
+        candidates.sort((a, b) => {
+          if (!a.paused && b.paused) return -1;
+          if (a.paused && !b.paused) return 1;
+          return (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight);
+        });
+
+        return candidates[0];
+      }
+
       function estimateFrameDuration() {
         const video = document.querySelector('video');
         const fpsCandidates = [];
@@ -215,28 +246,89 @@ async function executeSeekInTab(tabId, direction, settings) {
         };
       }
 
-      const signedDelta = getSignedSeekDelta(directionArg, settingsArg);
+      async function applyYouTubePlayerApi(signedDelta) {
+        const player = getYouTubePlayer();
+        if (!player) {
+          return { success: false, error: 'YouTube player API unavailable' };
+        }
 
-      const result = await applyNetflixPlayerApi(signedDelta);
+        const currentSeconds = player.getCurrentTime();
+        const targetSeconds = Math.max(0, currentSeconds + signedDelta);
+        player.seekTo(targetSeconds, true);
 
-      if (!result.success) {
+        await wait(40);
+        const actualSeconds = typeof player.getCurrentTime === 'function'
+          ? player.getCurrentTime()
+          : targetSeconds;
+
         return {
-          success: false,
-          error: result.error,
-          seekStepValue: settingsArg.seekStepValue,
-          seekStepUnit: settingsArg.seekStepUnit,
-          methodUsed: 'netflix-player-api',
-          methodLabel: 'Netflix player API'
+          success: true,
+          currentTime: actualSeconds
         };
       }
 
+      async function applyHtml5Seek(signedDelta) {
+        const video = getPrimaryVideo();
+        if (!video) {
+          return { success: false, error: 'No video found' };
+        }
+
+        const maxTime = Number.isFinite(video.duration) && video.duration > 0
+          ? video.duration
+          : Number.POSITIVE_INFINITY;
+        const targetTime = Math.max(0, Math.min(maxTime, video.currentTime + signedDelta));
+        video.currentTime = targetTime;
+
+        await wait(40);
+        return {
+          success: true,
+          currentTime: video.currentTime
+        };
+      }
+
+      const signedDelta = getSignedSeekDelta(directionArg, settingsArg);
+      const host = window.location.hostname;
+      const isNetflixHost = /(^|\.)netflix\.com$/i.test(host);
+      const isYouTubeHost = /(^|\.)youtube\.com$/i.test(host);
+
+      const strategies = [];
+
+      if (isNetflixHost) {
+        strategies.push({ id: 'netflix-player-api', label: 'Netflix player API', execute: () => applyNetflixPlayerApi(signedDelta) });
+      }
+
+      if (isYouTubeHost) {
+        strategies.push({ id: 'youtube-player-api', label: 'YouTube player API', execute: () => applyYouTubePlayerApi(signedDelta) });
+      }
+
+      strategies.push({ id: 'html5-video-currenttime', label: 'HTML5 video seek', execute: () => applyHtml5Seek(signedDelta) });
+
+      let lastError = 'Unable to seek video';
+      for (const strategy of strategies) {
+        const result = await strategy.execute();
+        if (result.success) {
+          return {
+            success: true,
+            currentTime: result.currentTime,
+            seekStepValue: settingsArg.seekStepValue,
+            seekStepUnit: settingsArg.seekStepUnit,
+            methodUsed: strategy.id,
+            methodLabel: strategy.label
+          };
+        }
+
+        if (result.error) {
+          lastError = result.error;
+        }
+      }
+
       return {
-        success: true,
-        currentTime: result.currentTime,
+        success: false,
+        error: lastError,
         seekStepValue: settingsArg.seekStepValue,
         seekStepUnit: settingsArg.seekStepUnit,
-        methodUsed: 'netflix-player-api',
-        methodLabel: 'Netflix player API'
+        methodUsed: 'none',
+        methodLabel: 'No compatible seek method'
       };
     }
   });
@@ -246,8 +338,7 @@ async function executeSeekInTab(tabId, direction, settings) {
   }
 
   return {
-    ...result,
-    methodLabel: 'Netflix player API'
+    ...result
   };
 }
 

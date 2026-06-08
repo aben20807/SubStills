@@ -11,7 +11,8 @@
     "tabs"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://www.netflix.com/*",
+    "https://www.youtube.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -28,7 +29,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["https://www.netflix.com/*", "https://www.youtube.com/*"],
       "js": ["content/content.js"],
       "css": ["content/content.css"],
       "all_frames": true
@@ -40,7 +41,7 @@
   "web_accessible_resources": [
     {
       "resources": ["icons/*"],
-      "matches": ["<all_urls>"]
+      "matches": ["https://www.netflix.com/*", "https://www.youtube.com/*"]
     }
   ]
 }
