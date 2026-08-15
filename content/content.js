@@ -11,6 +11,7 @@
 
   const IS_NETFLIX = /(^|\.)netflix\.com$/i.test(window.location.hostname);
   const IS_YOUTUBE = /(^|\.)youtube\.com$/i.test(window.location.hostname);
+  const IS_ANIME1 = /(^|\.)anime1\.me$/i.test(window.location.hostname);
 
   // Store hidden elements to restore later
   let hiddenElements = [];
@@ -183,6 +184,11 @@
       return;
     }
 
+    if (IS_ANIME1 && injectIntoAnime1Controls(video)) {
+      buttonInjected = true;
+      return;
+    }
+
     // Try to inject into Netflix's control bar first
     if (injectIntoNetflixControls()) {
       buttonInjected = true;
@@ -328,6 +334,27 @@
       rightControls.insertBefore(btn, rightControls.firstChild);
     }
 
+    return true;
+  }
+
+  function injectIntoAnime1Controls(video) {
+    const player = video.closest('.video-js');
+    const controlBar = player?.querySelector('.vjs-control-bar');
+    if (!controlBar) return false;
+
+    const btn = document.createElement('button');
+    btn.className = 'video-screenshot-btn vjs-control vjs-button';
+    btn.type = 'button';
+    btn.title = 'Take Screenshot';
+    btn.dataset.substillsControl = 'screenshot';
+    btn.innerHTML = `${getScreenshotIcon()}<span class="vjs-control-text">Take Screenshot</span>`;
+    btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await takeScreenshotFromButton();
+    });
+
+    controlBar.appendChild(btn);
     return true;
   }
 
@@ -561,6 +588,14 @@
 
   function getVideoTitle() {
     // Try different methods to get video title
+
+    if (IS_ANIME1) {
+      const video = findBestVideo();
+      const episodeTitle = video?.closest('article')?.querySelector('.entry-title');
+      if (episodeTitle?.textContent.trim()) {
+        return sanitizeFilename(episodeTitle.textContent.trim());
+      }
+    }
     
     // Netflix - try multiple selectors
     const netflixSelectors = [
@@ -616,6 +651,7 @@
 
   function hidePlayerControls(hideSubtitles = false) {
     hiddenElements = [];
+    const hiddenElementSet = new Set();
     
     // Common player control selectors (excluding subtitles)
     const controlSelectors = [
@@ -667,6 +703,10 @@
       try {
         const elements = document.querySelectorAll(selector);
         for (const el of elements) {
+          if (hiddenElementSet.has(el)) {
+            continue;
+          }
+
           // If not hiding subtitles, skip subtitle elements
           if (!hideSubtitles) {
             const classList = el.classList.toString().toLowerCase();
@@ -676,6 +716,8 @@
               continue;
             }
           }
+
+          hiddenElementSet.add(el);
           
           // Store original display/visibility
           const originalDisplay = el.style.display;
@@ -839,7 +881,14 @@
   function isCanvasBlack(ctx, width, height) {
     // Sample pixels from the canvas to check if it's all black
     const sampleSize = 100;
-    const imageData = ctx.getImageData(0, 0, width, height);
+    let imageData;
+    try {
+      imageData = ctx.getImageData(0, 0, width, height);
+    } catch (error) {
+      // Cross-origin video frames taint the canvas and require visible-tab capture.
+      if (error.name === 'SecurityError') return true;
+      throw error;
+    }
     const data = imageData.data;
     
     let nonBlackPixels = 0;
